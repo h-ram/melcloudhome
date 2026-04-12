@@ -261,26 +261,30 @@ class MELCloudHomeClient:
             params=params,
         )
 
-    def _parse_outdoor_temp(self, response: dict[str, Any]) -> float | None:
+    def _parse_outdoor_temp(self, response: dict[str, Any] | list) -> float | None:
         """Extract outdoor temperature from trendsummary response.
 
-        Response format:
-        {
-          "datasets": [
-            {
-              "label": "REPORT.TREND_SUMMARY_REPORT.DATASET.LABELS.OUTDOOR_TEMPERATURE",
-              "data": [{"x": "2026-01-12T20:00:00", "y": 11}, ...]
-            }
-          ]
-        }
+        Response format (mobile BFF wraps in a list):
+        [
+          {
+            "datasets": [
+              {
+                "label": "REPORT.TREND_SUMMARY_REPORT.DATASET.LABELS.OUTDOOR_TEMPERATURE",
+                "data": [{"x": "2026-01-12T20:00:00", "y": 11}, ...]
+              }
+            ]
+          }
+        ]
 
         Args:
-            response: Trendsummary API response
+            response: Trendsummary API response (list or dict)
 
         Returns:
             Outdoor temperature in Celsius, or None if not available
         """
-        datasets = response.get("datasets", [])
+        # Mobile BFF wraps the report in a list
+        report = response[0] if isinstance(response, list) and response else response
+        datasets = report.get("datasets", []) if isinstance(report, dict) else []
         for dataset in datasets:
             label = dataset.get("label", "")
             if "OUTDOOR_TEMPERATURE" in label:
