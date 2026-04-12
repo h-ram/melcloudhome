@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.3.0] - 2026-04-12
 
+### Added
+
+- French (fr) translations (thanks @pfauchet)
+- Turkish (tr) translations (thanks @freedomwarriorx86)
+
 ### Changed
 
 - Migrated from web BFF to mobile BFF API (`mobile.bff.melcloudhome.com`), resolving the ongoing service outage
