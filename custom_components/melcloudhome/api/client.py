@@ -310,6 +310,7 @@ class MELCloudHomeClient:
         # Format: 2026-01-12T20:00:00.0000000 (7 decimal places for nanoseconds)
         params = {
             "unitId": unit_id,
+            "period": "Hourly",
             "from": from_time.strftime("%Y-%m-%dT%H:%M:%S.0000000"),
             "to": now.strftime("%Y-%m-%dT%H:%M:%S.0000000"),
         }
