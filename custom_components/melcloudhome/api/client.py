@@ -7,6 +7,7 @@ Provides unified API access using the Facade pattern:
 """
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -51,6 +52,7 @@ class MELCloudHomeClient:
         self._debug_mode = debug_mode
         self._base_url = MOCK_BASE_URL if debug_mode else BASE_URL
         self._user_context: UserContext | None = None
+        self._on_tokens_refreshed: Callable[[], None] | None = None
 
         # Request pacing to prevent rate limiting (shared across all requests)
         self._request_pacer = request_pacer or RequestPacer()
@@ -116,6 +118,10 @@ class MELCloudHomeClient:
         """Check if a refresh token is available."""
         return self._auth.refresh_token is not None
 
+    def set_on_tokens_refreshed(self, callback: Callable[[], None]) -> None:
+        """Register callback for when tokens are refreshed proactively."""
+        self._on_tokens_refreshed = callback
+
     async def refresh_access_token(self) -> bool:
         """Refresh the access token using stored refresh token."""
         return await self._auth.refresh_access_token()
@@ -141,6 +147,18 @@ class MELCloudHomeClient:
             ApiError: If API request fails
         """
         async with self._request_pacer:
+            # Proactive token refresh — avoid making a request we know will 401
+            if self._auth.is_token_expired and self._auth.refresh_token:
+                try:
+                    await self._auth.refresh_access_token()
+                    _LOGGER.info("Proactive token refresh successful")
+                    if self._on_tokens_refreshed:
+                        self._on_tokens_refreshed()
+                except AuthenticationError:
+                    _LOGGER.warning(
+                        "Proactive token refresh failed, will retry via login"
+                    )
+
             if not self._auth.is_authenticated:
                 raise AuthenticationError("Not authenticated - call login() first")
 

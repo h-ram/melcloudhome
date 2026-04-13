@@ -416,6 +416,178 @@ class TestCSRFTokenExtraction:
         assert token is None
 
 
+class TestExistingSessionLogin:
+    """Test login when auth server already has a session.
+
+    When the auth server has a valid session from a previous login,
+    it skips Cognito and redirects straight to the callback with an
+    auth code. The login flow must handle this fast path.
+    """
+
+    @pytest.mark.asyncio
+    async def test_login_with_existing_session_redirect_page(
+        self, request_pacer
+    ) -> None:
+        """Auth server returns Redirect page with callback URL in body."""
+        auth = MELCloudHomeAuth(request_pacer=request_pacer)
+
+        # Step 1: PAR response
+        par_response = MagicMock()
+        par_response.status = 201
+        par_response.json = AsyncMock(
+            return_value={"request_uri": "urn:ietf:params:oauth:request_uri:TEST123"}
+        )
+        par_response.__aenter__ = AsyncMock(return_value=par_response)
+        par_response.__aexit__ = AsyncMock(return_value=None)
+
+        # Step 2: Authorize returns Redirect page (existing session)
+        redirect_page = MagicMock()
+        redirect_page.status = 200
+        redirect_page.url = "https://auth.melcloudhome.com/Redirect?RedirectUri=/connect/authorize/callback"
+        redirect_page.text = AsyncMock(
+            return_value='<script>window.location="/connect/authorize/callback?request_uri=TEST&client_id=homemobile"</script>'
+        )
+        redirect_page.__aenter__ = AsyncMock(return_value=redirect_page)
+        redirect_page.__aexit__ = AsyncMock(return_value=None)
+
+        # Step 5 (callback follow): Returns melcloudhome:// with code
+        callback_response = MagicMock()
+        callback_response.status = 302
+        callback_response.headers = {
+            "Location": "melcloudhome://?code=AUTH_CODE_123&state=test"
+        }
+        callback_response.__aenter__ = AsyncMock(return_value=callback_response)
+        callback_response.__aexit__ = AsyncMock(return_value=None)
+
+        # Step 6: Token exchange
+        token_response = MagicMock()
+        token_response.status = 200
+        token_response.json = AsyncMock(
+            return_value={
+                "access_token": "new-access-token",
+                "refresh_token": "new-refresh-token",
+                "expires_in": 3600,
+            }
+        )
+        token_response.__aenter__ = AsyncMock(return_value=token_response)
+        token_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(side_effect=[par_response, token_response])
+        mock_session.get = MagicMock(side_effect=[redirect_page, callback_response])
+
+        try:
+            with patch.object(auth, "_ensure_session", return_value=mock_session):
+                result = await auth.login("test@example.com", "password")
+
+            assert result is True
+            assert auth.is_authenticated
+            assert auth.access_token == "new-access-token"
+            assert auth.refresh_token == "new-refresh-token"
+        finally:
+            await auth.close()
+
+    @pytest.mark.asyncio
+    async def test_login_with_existing_session_code_in_url(self, request_pacer) -> None:
+        """Auth server redirects to page with code directly in URL."""
+        auth = MELCloudHomeAuth(request_pacer=request_pacer)
+
+        par_response = MagicMock()
+        par_response.status = 201
+        par_response.json = AsyncMock(
+            return_value={"request_uri": "urn:ietf:params:oauth:request_uri:TEST123"}
+        )
+        par_response.__aenter__ = AsyncMock(return_value=par_response)
+        par_response.__aexit__ = AsyncMock(return_value=None)
+
+        # Authorize lands on a URL with code= parameter
+        redirect_with_code = MagicMock()
+        redirect_with_code.status = 200
+        redirect_with_code.url = (
+            "https://auth.melcloudhome.com/Redirect?code=DIRECT_CODE_456&state=test"
+        )
+        redirect_with_code.text = AsyncMock(return_value="<html></html>")
+        redirect_with_code.__aenter__ = AsyncMock(return_value=redirect_with_code)
+        redirect_with_code.__aexit__ = AsyncMock(return_value=None)
+
+        token_response = MagicMock()
+        token_response.status = 200
+        token_response.json = AsyncMock(
+            return_value={
+                "access_token": "new-access-token",
+                "refresh_token": "new-refresh-token",
+                "expires_in": 3600,
+            }
+        )
+        token_response.__aenter__ = AsyncMock(return_value=token_response)
+        token_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(side_effect=[par_response, token_response])
+        mock_session.get = MagicMock(return_value=redirect_with_code)
+
+        try:
+            with patch.object(auth, "_ensure_session", return_value=mock_session):
+                result = await auth.login("test@example.com", "password")
+
+            assert result is True
+            assert auth.is_authenticated
+            assert auth.access_token == "new-access-token"
+        finally:
+            await auth.close()
+
+    @pytest.mark.asyncio
+    async def test_login_with_non_http_redirect_extracts_code(
+        self, request_pacer
+    ) -> None:
+        """aiohttp throws NonHttpUrlRedirectClientError for melcloudhome:// redirect."""
+        import aiohttp
+
+        auth = MELCloudHomeAuth(request_pacer=request_pacer)
+
+        par_response = MagicMock()
+        par_response.status = 201
+        par_response.json = AsyncMock(
+            return_value={"request_uri": "urn:ietf:params:oauth:request_uri:TEST123"}
+        )
+        par_response.__aenter__ = AsyncMock(return_value=par_response)
+        par_response.__aexit__ = AsyncMock(return_value=None)
+
+        # Authorize throws because aiohttp tries to follow melcloudhome://
+        authorize_error = aiohttp.NonHttpUrlRedirectClientError(
+            "melcloudhome://?code=REDIRECT_CODE_789&state=test&session_state=abc"
+        )
+        authorize_response = MagicMock()
+        authorize_response.__aenter__ = AsyncMock(side_effect=authorize_error)
+        authorize_response.__aexit__ = AsyncMock(return_value=None)
+
+        token_response = MagicMock()
+        token_response.status = 200
+        token_response.json = AsyncMock(
+            return_value={
+                "access_token": "new-access-token",
+                "refresh_token": "new-refresh-token",
+                "expires_in": 3600,
+            }
+        )
+        token_response.__aenter__ = AsyncMock(return_value=token_response)
+        token_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(side_effect=[par_response, token_response])
+        mock_session.get = MagicMock(return_value=authorize_response)
+
+        try:
+            with patch.object(auth, "_ensure_session", return_value=mock_session):
+                result = await auth.login("test@example.com", "password")
+
+            assert result is True
+            assert auth.is_authenticated
+            assert auth.access_token == "new-access-token"
+        finally:
+            await auth.close()
+
+
 class TestMultipleAuthInstances:
     """Test multiple auth instances can coexist."""
 

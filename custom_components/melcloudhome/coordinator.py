@@ -94,6 +94,9 @@ class MELCloudHomeCoordinator(DataUpdateCoordinator[UserContext]):
             get_coordinator_data=lambda: self.data,
         )
 
+        # Persist tokens when client refreshes proactively
+        client.set_on_tokens_refreshed(self._persist_tokens)
+
         # Outage backoff: tracks consecutive 5xx failures for retry spacing
         self._outage_retry_count: int = 0
 
@@ -131,12 +134,8 @@ class MELCloudHomeCoordinator(DataUpdateCoordinator[UserContext]):
     async def _async_update_data(self) -> UserContext:
         """Fetch data from API endpoint."""
         try:
-            # If not authenticated yet, login first
-            if not self.client.is_authenticated:
-                _LOGGER.debug("Not authenticated, logging in")
-                await self.client.login(self._email, self._password)
-
-            # Use retry helper for consistency
+            # Auth handled transparently by _api_request (proactive refresh)
+            # and _execute_with_retry (401 recovery with refresh → login fallback)
             context: UserContext = await self._execute_with_retry(
                 self.client.get_user_context,
                 "coordinator_update",
