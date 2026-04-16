@@ -39,7 +39,7 @@
           "preset_mode": {
             "state": {
               "room": "Kamer",
-              "flow": "Stroom",
+              "flow": "Aanvoer",
               "curve": "Kromme"
             }
           },
@@ -151,7 +151,7 @@
   },
   "services": {
     "force_refresh": {
-      "name": " Geforceerd vernieuwen",
+      "name": "Geforceerd vernieuwen",
       "description": "Ververst onmiddellijk apparaatgegevens van MELCloud-servers (voor testen/ontwikkeling)"
     }
   }
