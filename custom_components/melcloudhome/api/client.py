@@ -159,7 +159,7 @@ class MELCloudHomeClient:
                 if self._auth.is_token_expired:
                     try:
                         await self._auth.refresh_access_token()
-                        _LOGGER.info("Proactive token refresh successful")
+                        _LOGGER.debug("Proactive token refresh successful")
                         if self._on_tokens_refreshed:
                             self._on_tokens_refreshed()
                     except AuthenticationError:
